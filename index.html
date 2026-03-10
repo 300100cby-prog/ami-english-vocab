@@ -348,48 +348,71 @@ function prevCard(){ if(currentIdx>0){ currentIdx--; updateCard(); } }
 function nextCard(){ if(currentIdx<currentWords.length-1){ currentIdx++; updateCard(); } else if(isAutoPlay) stopAuto(); }
 function shuffleCards(){ for(let i=currentWords.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [currentWords[i],currentWords[j]]=[currentWords[j],currentWords[i]]; } currentIdx=0; updateCard(); }
 
-// 모바일 TTS 언락 - 첫 터치시 음성 엔진 초기화
+// ===== TTS - 모바일/PC 완전 호환 =====
 let ttsUnlocked = false;
-function unlockTTS() {
+
+// 모바일은 반드시 사용자 터치 후에만 소리 가능 → 첫 터치로 언락
+function unlockAudio() {
   if (ttsUnlocked) return;
-  const u = new SpeechSynthesisUtterance('');
-  u.volume = 0;
-  speechSynthesis.speak(u);
   ttsUnlocked = true;
+  // 빈 utterance로 음성 엔진 깨우기
+  try {
+    speechSynthesis.cancel();
+    const wake = new SpeechSynthesisUtterance(' ');
+    wake.volume = 0; wake.rate = 1;
+    speechSynthesis.speak(wake);
+  } catch(e) {}
 }
-document.addEventListener('touchstart', unlockTTS, { once: true });
-document.addEventListener('click', unlockTTS, { once: true });
+document.addEventListener('touchstart', unlockAudio, { passive: true });
+document.addEventListener('mousedown', unlockAudio);
+
+// voices 미리 로드
+let cachedVoices = [];
+function loadVoices() {
+  cachedVoices = speechSynthesis.getVoices();
+}
+loadVoices();
+speechSynthesis.addEventListener('voiceschanged', loadVoices);
+
+function getEnglishVoice() {
+  if (!cachedVoices.length) cachedVoices = speechSynthesis.getVoices();
+  // en-US 우선, 없으면 en- 아무거나
+  return cachedVoices.find(v => v.lang === 'en-US')
+      || cachedVoices.find(v => v.lang.startsWith('en-'))
+      || cachedVoices.find(v => v.lang.startsWith('en'))
+      || null;
+}
+
+function doSpeak(word) {
+  if (!word) return;
+  try {
+    speechSynthesis.cancel();
+    setTimeout(() => {
+      try {
+        const u = new SpeechSynthesisUtterance(word);
+        u.lang = 'en-US';
+        u.rate = 0.85;
+        u.pitch = 1;
+        u.volume = 1;
+        const v = getEnglishVoice();
+        if (v) u.voice = v;
+        speechSynthesis.speak(u);
+      } catch(e) { console.log('TTS error:', e); }
+    }, 80);
+  } catch(e) {}
+}
 
 function speakCurrent() {
   if (!currentWords.length) return;
-  const word = currentWords[currentIdx].word;
-  doSpeak(word);
+  doSpeak(currentWords[currentIdx].word);
 }
 function speakWord(w) { doSpeak(w); }
-
-function doSpeak(word) {
-  speechSynthesis.cancel();
-  setTimeout(() => {
-    const u = new SpeechSynthesisUtterance(word);
-    u.lang = 'en-US';
-    u.rate = 0.85;
-    u.volume = 1;
-    // 모바일에서 voices 로드 타이밍 문제 해결
-    const voices = speechSynthesis.getVoices();
-    const enVoice = voices.find(v => v.lang.startsWith('en') && !v.localService === false)
-                 || voices.find(v => v.lang.startsWith('en'))
-                 || null;
-    if (enVoice) u.voice = enVoice;
-    speechSynthesis.speak(u);
-  }, 50);
+function toggleTTS() {
+  ttsEnabled = !ttsEnabled;
+  const b = document.getElementById('ttsToggle');
+  b.textContent = ttsEnabled ? 'ON' : 'OFF';
+  b.classList.toggle('active', ttsEnabled);
 }
-
-// voices 미리 로드 (모바일 대비)
-if (speechSynthesis.onvoiceschanged !== undefined) {
-  speechSynthesis.onvoiceschanged = () => speechSynthesis.getVoices();
-}
-
-function toggleTTS(){ ttsEnabled=!ttsEnabled; const b=document.getElementById('ttsToggle'); b.textContent=ttsEnabled?'ON':'OFF'; b.classList.toggle('active',ttsEnabled); }
 
 function toggleAuto(){ if(isAutoPlay) stopAuto(); else startAuto(); }
 function startAuto(){ isAutoPlay=true; document.getElementById('autoBtn').textContent='⏸ 정지'; document.getElementById('autoBtn').classList.add('active'); runAutoStep(); }
